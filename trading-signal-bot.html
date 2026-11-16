@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Bot</title>
+<style>
+:root{
+  --bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--line:#2a3340;--text:#e6edf3;--muted:#8b98a8;
+  --buy:#2fbf71;--sell:#f0544f;--hold:#d9a441;--accent:#4c8dff;--sma20:#d9a441;--sma50:#b07cff;--band:rgba(76,141,255,.10);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:17px;margin:0 12px 0 0}
+input,select,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 10px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.muted{color:var(--muted)}.small{font-size:12px}
+.disclaimer{padding:8px 16px;font-size:12px;color:var(--muted);background:#1a1508;border-bottom:1px solid #3a2f12}
+main{display:grid;grid-template-columns:370px 1fr 320px;gap:12px;padding:12px;min-height:calc(100vh - 110px)}
+@media(max-width:1100px){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+.row{display:flex;gap:8px;align-items:center}
+table{width:100%;border-collapse:collapse}
+td{padding:7px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr.sym{cursor:pointer}tr.sym:hover td,tr.sym.active td{background:var(--panel2)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.BUY{background:rgba(47,191,113,.15);color:var(--buy)}.SELL{background:rgba(240,84,79,.15);color:var(--sell)}.HOLD{background:rgba(217,164,65,.15);color:var(--hold)}
+.up{color:var(--buy)}.down{color:var(--sell)}
+.x{background:none;border:none;color:var(--muted);padding:0 4px}
+canvas{width:100%;height:380px;display:block}
+.verdict{font-size:26px;font-weight:700;margin:4px 0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.stat{background:var(--panel2);border-radius:8px;padding:8px}
+.stat b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+ul.reasons{margin:6px 0 0;padding-left:18px}ul.reasons li{margin:3px 0}
+.meter{height:8px;border-radius:99px;background:linear-gradient(90deg,var(--sell),var(--hold),var(--buy));position:relative;margin:8px 0 2px}
+.meter i{position:absolute;top:-4px;width:4px;height:16px;background:#fff;border-radius:2px;transform:translateX(-2px)}
+#feed{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto}
+.msg{background:var(--panel2);border-radius:10px;padding:8px 10px;border-left:3px solid var(--accent)}
+.msg.BUY{border-left-color:var(--buy);color:var(--text)}.msg.SELL{border-left-color:var(--sell);color:var(--text)}.msg.HOLD{border-left-color:var(--hold);color:var(--text)}
+.msg time{display:block;font-size:11px;color:var(--muted)}
+.err{color:var(--sell);font-size:12px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:5px;vertical-align:middle}
+.dot.on{background:var(--buy);box-shadow:0 0 6px var(--buy)}
+.blink{animation:pulse 1s}@keyframes pulse{0%{opacity:.3}}
+.flash-up{animation:fu .5s}.flash-down{animation:fd .5s}
+@keyframes fu{from{background:rgba(47,191,113,.35)}}@keyframes fd{from{background:rgba(240,84,79,.35)}}
+#selLive{font-size:12px;color:var(--muted)}
+/* broker-style Sell / Buy price boxes */
+.bs{display:flex;gap:4px;justify-content:flex-end}
+.bs div{min-width:76px;border-radius:6px;padding:3px 7px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600;font-size:13px}
+.bs small{display:block;font-size:10px;font-weight:500;opacity:.85}
+.bs .s{background:rgba(240,84,79,.16);color:var(--sell)}
+.bs .b{background:rgba(76,141,255,.2);color:#7fb0ff}
+.bs.big{justify-content:flex-start;align-items:stretch;gap:8px;margin:10px 0 4px}
+.bs.big div{min-width:150px;padding:10px 14px;font-size:22px;border-radius:10px}
+.bs.big small{font-size:12px}
+.bs.big .spread{background:none;color:var(--muted);font-size:12px;font-weight:500;min-width:0;align-self:center}
+.legend span{margin-right:12px;font-size:12px}.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle}
+</style>
+</head>
+<body>
+<header>
+  <h1>📈 Signal Bot</h1>
+  <form id="addForm" class="row">
+    <input id="addInput" placeholder="AAPL, BTC, EUR/USD…" size="14">
+    <button>Add</button>
+    <button type="button" id="addFx" title="Add all 20 forex pairs to the watchlist">+ All forex</button>
+  </form>
+  <label class="row small muted">Timeframe
+    <select id="interval">
+      <option value="15min">15 min</option><option value="1h" selected>1 hour</option><option value="4h">4 hours</option><option value="1day">1 day</option>
+    </select>
+  </label>
+  <label class="row small muted">Auto-refresh
+    <select id="refresh" title="Full history reload; live prices stream continuously"><option value="0">Off</option><option value="60" selected>1 min</option><option value="300">5 min</option></select>
+  </label>
+  <label class="row small muted">Crypto data
+    <select id="cryptoSrc"><option value="revolut">Revolut X</option><option value="binance">Binance</option></select>
+    <select id="quoteCcy" title="Currency for crypto prices: BTC means BTC/GBP when GBP is chosen"><option value="GBP">£ GBP</option><option value="USD">$ USD</option><option value="EUR">€ EUR</option></select>
+    <select id="rxRegion" title="Revolut X market region"><option value="UK">UK</option><option value="EEA">EEA</option></select>
+  </label>
+  <button id="refreshBtn">Refresh now</button>
+  <button id="notifyBtn">Enable alerts</button>
+  <span style="flex:1"></span>
+  <label class="row small muted" title="Free key from twelvedata.com — needed for stocks, and for intraday forex">
+    Twelve Data key <input id="apiKey" type="password" size="18" placeholder="needed for stocks">
+  </label>
+</header>
+<div class="disclaimer">⚠️ Signals come from technical indicators (RSI, MACD, moving averages, Bollinger Bands). They are educational, not financial advice, and they are often wrong. This tool never places orders. Only risk money you can afford to lose.</div>
+
+<main>
+  <section class="card">
+    <h2>Watchlist</h2>
+    <table><tbody id="watch"></tbody></table>
+    <p class="small muted" id="status"></p>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap">
+      <div><h2 style="margin:0" id="selTitle">—</h2><div class="small muted" id="selSource"></div><div id="selLive"></div></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Price</span><span><i style="background:var(--sma20)"></i>SMA 20</span><span><i style="background:var(--sma50)"></i>SMA 50</span><span><i style="background:var(--band);height:8px"></i>Bollinger</span></div>
+    </div>
+    <canvas id="chart"></canvas>
+    <div id="analysis"></div>
+  </section>
+
+  <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+  <section class="card">
+    <h2>🤖 Bot</h2>
+    <div id="feed"></div>
+  </section>
+  </div>
+</main>
+
+<script>
+/* ---------- storage helpers ---------- */
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+/* ---------- symbols ---------- */
+const CRYPTO=new Set(['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','AVAX','DOT','LINK','LTC','TRX','SHIB','TON','PEPE','SUI','NEAR','ATOM','UNI','BCH']);
+const ALIAS={BITCOIN:'BTC',BTCOIN:'BTC',BITCION:'BTC',ETHEREUM:'ETH',ETHERUM:'ETH',EUTHERUM:'ETH',EUTHEREUM:'ETH',ETHERIUM:'ETH',ETHEREM:'ETH',ETHER:'ETH',SOLANA:'SOL',RIPPLE:'XRP',DOGECOIN:'DOGE',APPLE:'AAPL',TESLA:'TSLA',MICROSOFT:'MSFT',NVIDIA:'NVDA',AMAZON:'AMZN',GOOGLE:'GOOGL',META:'META',GOLD:'XAU/USD',EURUSD:'EUR/USD',GBPUSD:'GBP/USD',USDJPY:'USD/JPY'};
+function normalize(raw){
+  let s=raw.trim().toUpperCase().replace(/\s+/g,'');
+  if(ALIAS[s]) return ALIAS[s];
+  s=s.replace(/^([A-Z0-9]+)-([A-Z]{3,4})$/,'$1/$2');          // BTC-GBP -> BTC/GBP (pinned currency)
+  if(/^[A-Z0-9]+USDT$/.test(s))s=s.replace(/USDT$/,'/USDT');
+  if(/^[A-Z]{6}$/.test(s)&&!CRYPTO.has(s)&&isFiat(s.slice(0,3))&&isFiat(s.slice(3))) s=s.slice(0,3)+'/'+s.slice(3);
+  return s;
+}
+const FIAT=['USD','EUR','GBP','JPY','CHF','AUD','CAD','NZD','SEK','NOK','DKK','PLN','CZK','HUF','TRY','ZAR','MXN','SGD','HKD','CNY','INR','KRW','BRL','XAU'];
+function isFiat(c){return FIAT.includes(c)}
+function kind(s){if(s.includes('/'))return CRYPTO.has(s.split('/')[0])?'crypto':'forex';return CRYPTO.has(s)?'crypto':'stock'}
+
+/* ---------- data sources ---------- */
+const BIN_IV={'15min':'15m','1h':'1h','4h':'4h','1day':'1d'};
+async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+
+const fxCache={};
+async function usdTo(c){ // USD -> c, ECB daily reference rate, cached 1 h
+  const h=fxCache[c];if(h&&Date.now()-h.at<36e5)return h.v;
+  let j;try{j=await getJSON(`https://api.frankfurter.dev/v1/latest?from=USD&to=${c}`)}catch{j=await getJSON(`https://api.frankfurter.app/latest?from=USD&to=${c}`)}
+  const v=j.rates&&j.rates[c];if(!v)throw new Error('No exchange rate for '+c);
+  fxCache[c]={v,at:Date.now()};return v;
+}
+async function fetchCrypto(sym,iv){
+  const base=sym.split('/')[0];
+  const ccy=sym.includes('/')?sym.split('/')[1]:quoteCcy();
+  // Binance's GBP pairs are inactive (stale prices), so for GBP use the USDT market converted at today's ECB rate
+  let pair=base+(ccy==='USD'?'USDT':ccy),fx=1,note='';
+  if(ccy==='GBP'){pair=base+'USDT';fx=await usdTo('GBP');note=` → £ at ECB rate ${fx.toFixed(4)}`}
+  const q=`/api/v3/klines?symbol=${pair}&interval=${BIN_IV[iv]}&limit=300`;
+  let rows;
+  try{rows=await getJSON('https://api.binance.com'+q)}catch{rows=await getJSON('https://data-api.binance.vision'+q)}
+  if(!rows.length||Date.now()-rows[rows.length-1][0]>3*IV_MS[iv])throw new Error(`Binance ${pair} market is inactive`);
+  const f=v=>+v*fx;
+  return {feed:'binance',iv,ccy,fx,binPair:pair,source:`Binance · ${pair}${note} · ${BIN_IV[iv]} candles · every trade streamed`,t:rows.map(r=>r[0]),o:rows.map(r=>f(r[1])),h:rows.map(r=>f(r[2])),l:rows.map(r=>f(r[3])),c:rows.map(r=>f(r[4]))};
+}
+/* Revolut X public market data (relayed by start-signal-bot.ps1, because Revolut blocks direct browser calls) */
+const PROXY=location.protocol.startsWith('http')?'/revx':null;
+const RX_IV={'15min':15,'1h':60,'4h':240,'1day':1440};
+const IV_MS={'15min':9e5,'1h':36e5,'4h':144e5,'1day':864e5};
+const rxSym=s=>s.includes('/')?s.replace('/','-'):s+'-'+quoteCcy();
+const quoteCcy=()=>store.get('quoteCcy','GBP');
+const CCY_SIGN={USD:'$',GBP:'£',EUR:'€',JPY:'¥'};
+// currency a symbol is priced in: from the loaded data, an explicit pair (BTC/EUR), the crypto setting, or USD for stocks
+function ccyOf(s){const d=results[s]&&results[s].data;if(d&&d.ccy)return d.ccy;if(s.includes('/'))return s.split('/')[1];return kind(s)==='crypto'?quoteCcy():'USD'}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const cryptoSrc=()=>store.get('cryptoSrc','revolut'),rxRegion=()=>store.get('rxRegion','UK');
+let rxChain=Promise.resolve(),rxLast=0;
+function rxGet(path){ // one request at a time, spaced out, retry when rate-limited (HTTP 429)
+  const job=rxChain.then(async()=>{
+    for(let tries=0;;tries++){
+      const wait=rxLast+1000-Date.now();if(wait>0)await sleep(wait);
+      rxLast=Date.now();
+      const r=await fetch(PROXY+path);
+      if(r.status===429&&tries<4){await sleep(3000*(tries+1));continue}
+      if(!r.ok){const e=new Error('Revolut HTTP '+r.status);e.status=r.status;throw e}
+      return r.json();
+    }
+  });
+  rxChain=job.catch(()=>{});return job;
+}
+async function fetchRevolut(sym,iv){
+  const m=RX_IV[iv],now=Date.now();
+  const j=await rxGet(`/1.0/public/candles/${rxSym(sym)}?interval=${m}&since=${now-300*m*60000}&until=${now}&region=${rxRegion()}`);
+  const v=(j.data||[]).slice().sort((a,b)=>a.start-b.start);
+  if(v.length<60)throw new Error(`Revolut X has no ${rxSym(sym)} market`);
+  return {feed:'revolut',iv,ccy:rxSym(sym).split('-')[1],source:`Revolut X (${rxRegion()}) · ${rxSym(sym)} · ${iv} candles · live ticker`,t:v.map(x=>x.start),o:v.map(x=>+x.open),h:v.map(x=>+x.high),l:v.map(x=>+x.low),c:v.map(x=>+x.close)};
+}
+/* stocks via Yahoo Finance chart data (relayed by start-signal-bot.ps1, no key needed) */
+const YF_IV={'15min':['15m','10d'],'1h':['60m','60d'],'4h':['60m','200d'],'1day':['1d','2y']};
+const ySym=s=>kind(s)==='forex'?s.replace('/','')+'=X':s;   // EUR/USD -> EURUSD=X on Yahoo
+const FX_PIP=s=>/JPY/.test(s)?0.01:0.0001;
+const yfURL=(sym,i,range,prepost)=>`/yf/v8/finance/chart/${encodeURIComponent(ySym(sym))}?interval=${i}&range=${range}&includePrePost=${prepost}`;
+async function yfGet(url){
+  const r=await fetch(url);
+  const j=await r.json().catch(()=>({}));
+  const res=j.chart&&j.chart.result&&j.chart.result[0];
+  if(!r.ok||!res||!res.timestamp)throw new Error((j.chart&&j.chart.error&&j.chart.error.description)||('Yahoo HTTP '+r.status));
+  return res;
+}
+async function fetchYahoo(sym,iv){
+  const [i,range]=YF_IV[iv];
+  const res=await yfGet(yfURL(sym,i,range,iv!=='1day'&&kind(sym)!=='forex'));
+  const q=res.indicators.quote[0];
+  let rows=res.timestamp.map((t,k)=>[t*1000,q.open[k],q.high[k],q.low[k],q.close[k]]).filter(x=>x.slice(1).every(v=>v!=null));
+  if(iv==='4h'){ // Yahoo has no 4h bars: combine 1h bars
+    const m=new Map();
+    for(const x of rows){const b=Math.floor(x[0]/144e5)*144e5,g=m.get(b);if(!g)m.set(b,[b,x[1],x[2],x[3],x[4]]);else{g[2]=Math.max(g[2],x[2]);g[3]=Math.min(g[3],x[3]);g[4]=x[4]}}
+    rows=[...m.values()];
+  }
+  rows=rows.slice(-300);
+  return {feed:'yahoo',iv,ccy:res.meta.currency||'USD',source:`Yahoo Finance · ${sym} · ${i} candles${iv==='4h'?' combined into 4h':''}${iv!=='1day'&&kind(sym)!=='forex'?' · incl. pre-market & after-hours':''} · live price every ~2s`,
+    t:rows.map(x=>x[0]),o:rows.map(x=>x[1]),h:rows.map(x=>x[2]),l:rows.map(x=>x[3]),c:rows.map(x=>x[4])};
+}
+const tdSymbol=sym=>kind(sym)==='crypto'&&!sym.includes('/')?sym+'/'+quoteCcy():sym;
+async function fetchTwelve(sym,iv,key){
+  const j=await getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol(sym))}&interval=${iv}&outputsize=300&apikey=${encodeURIComponent(key)}`);
+  if(j.status==='error'||!j.values)throw new Error(j.message||'No data');
+  const v=j.values.slice().reverse();
+  const tq=tdSymbol(sym).split('/')[1];
+  return {feed:'twelve',iv,ccy:(j.meta&&(j.meta.currency||j.meta.currency_quote))||tq||'USD',source:'Twelve Data · '+iv+' candles · live price polled',t:v.map(x=>Date.parse(x.datetime.replace(' ','T'))),o:v.map(x=>+x.open),h:v.map(x=>+x.high),l:v.map(x=>+x.low),c:v.map(x=>+x.close)};
+}
+async function fetchForexDaily(sym){
+  const [a,b]=sym.split('/');
+  const start=new Date(Date.now()-460*864e5).toISOString().slice(0,10);
+  const p=`/${start}..?from=${a}&to=${b}`;
+  let j;
+  try{j=await getJSON('https://api.frankfurter.dev/v1'+p)}catch{j=await getJSON('https://api.frankfurter.app'+p)}
+  const days=Object.keys(j.rates||{}).sort();
+  if(!days.length)throw new Error('Pair not supported by free source');
+  const c=days.map(d=>j.rates[d][b]);
+  return {feed:'ecb',iv:'1day',ccy:b,source:'ECB reference rates via Frankfurter (daily, no key) — add a Twelve Data key for real-time forex',t:days.map(d=>Date.parse(d)),o:c,h:c,l:c,c};
+}
+async function fetchData(sym,iv){
+  const key=store.get('tdkey','');
+  const k=kind(sym);
+  if(k==='crypto'){
+    let why='';
+    if(cryptoSrc()==='revolut'){
+      if(PROXY){try{return await fetchRevolut(sym,iv)}catch(e){why=e.message}}
+      else why='open the bot with "Start Signal Bot.cmd" to use Revolut';
+    }
+    try{const d=await fetchCrypto(sym,iv);if(why)d.source+=` (Revolut unavailable: ${why})`;return d}
+    catch(e){if(key)return fetchTwelve(sym,iv,key);throw e}
+  }
+  if(k==='forex'){
+    if(PROXY){try{return await fetchYahoo(sym,iv)}catch(e){}}   // live forex rate, no key
+    if(key){try{return await fetchTwelve(sym,iv,key)}catch(e){}}
+    return fetchForexDaily(sym);
+  }
+  if(PROXY){try{return await fetchYahoo(sym,iv)}catch(e){if(!key)throw e}}
+  if(!key)throw new Error('Open the bot with "Start Signal Bot.cmd" for stock data (or add a Twelve Data key)');
+  return fetchTwelve(sym,iv,key);
+}
+
+/* ---------- indicators ---------- */
+const nulls=n=>Array(n).fill(null);
+function sma(a,n){const o=nulls(a.length);let s=0;for(let i=0;i<a.length;i++){s+=a[i];if(i>=n)s-=a[i-n];if(i>=n-1)o[i]=s/n}return o}
+function ema(a,n){const o=nulls(a.length);const st=a.findIndex(v=>v!=null);if(st<0||a.length-st<n)return o;let s=0;for(let i=st;i<st+n;i++)s+=a[i];let p=s/n;o[st+n-1]=p;const k=2/(n+1);for(let i=st+n;i<a.length;i++){p=a[i]*k+p*(1-k);o[i]=p}return o}
+function rsi(c,n=14){const o=nulls(c.length);if(c.length<=n)return o;let g=0,l=0;for(let i=1;i<=n;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=n;l/=n;const f=()=>l===0?100:100-100/(1+g/l);o[n]=f();for(let i=n+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n;o[i]=f()}return o}
+function bollinger(c,n=20,k=2){const m=sma(c,n),u=nulls(c.length),d=nulls(c.length);for(let i=n-1;i<c.length;i++){let v=0;for(let j=i-n+1;j<=i;j++)v+=(c[j]-m[i])**2;const sd=Math.sqrt(v/n);u[i]=m[i]+k*sd;d[i]=m[i]-k*sd}return{m,u,d}}
+function atr(h,l,c,n=14){const tr=c.map((_,i)=>i===0?h[0]-l[0]:Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1])));const o=nulls(c.length);if(c.length<=n)return o;let a=0;for(let i=1;i<=n;i++)a+=tr[i];a/=n;o[n]=a;for(let i=n+1;i<c.length;i++){a=(a*(n-1)+tr[i])/n;o[i]=a}return o}
+
+/* ---------- the "brain": score indicators into a signal ---------- */
+function analyze(d){
+  const c=d.c,L=c.length-1,price=c[L];
+  if(L<60)throw new Error('Not enough history');
+  const s20=sma(c,20),s50=sma(c,50),r=rsi(c),bb=bollinger(c);
+  const e12=ema(c,12),e26=ema(c,26),macd=c.map((_,i)=>e12[i]!=null&&e26[i]!=null?e12[i]-e26[i]:null),sig=ema(macd,9),hist=macd.map((v,i)=>v!=null&&sig[i]!=null?v-sig[i]:null);
+  let A=atr(d.h,d.l,c)[L];
+  if(!A||A<price*1e-5){let s=0;for(let i=L-13;i<=L;i++)s+=Math.abs(c[i]-c[i-1]);A=s/14}
+  let score=0;const why=[];
+  const add=(pts,txt)=>{score+=pts;why.push({pts,txt})};
+
+  if(price>s50[L])add(1,'Price is above the 50-period average (uptrend).');else add(-1,'Price is below the 50-period average (downtrend).');
+  if(s20[L]>s50[L])add(1,'Short-term average is above long-term (bullish structure).');else add(-1,'Short-term average is below long-term (bearish structure).');
+  for(let i=L-4;i<=L;i++){
+    if(s20[i-1]<=s50[i-1]&&s20[i]>s50[i]){add(1,'Fresh golden cross: SMA20 just crossed above SMA50.');break}
+    if(s20[i-1]>=s50[i-1]&&s20[i]<s50[i]){add(-1,'Fresh death cross: SMA20 just crossed below SMA50.');break}
+  }
+  const R=r[L];
+  if(R<30)add(2,`RSI ${R.toFixed(0)} — oversold, bounce likely.`);
+  else if(R>70)add(-2,`RSI ${R.toFixed(0)} — overbought, pullback risk.`);
+  else why.push({pts:0,txt:`RSI ${R.toFixed(0)} — neutral zone.`});
+  if(hist[L]>0)add(1,'MACD is above its signal line (positive momentum).');else add(-1,'MACD is below its signal line (negative momentum).');
+  for(let i=L-2;i<=L;i++){
+    if(hist[i-1]<=0&&hist[i]>0){add(1,'MACD just crossed up — momentum turning bullish.');break}
+    if(hist[i-1]>=0&&hist[i]<0){add(-1,'MACD just crossed down — momentum turning bearish.');break}
+  }
+  if(price<bb.d[L])add(1,'Price closed below the lower Bollinger Band (stretched to the downside).');
+  else if(price>bb.u[L])add(-1,'Price closed above the upper Bollinger Band (stretched to the upside).');
+
+  const MAX=8;
+  const verdict=score>=4?'STRONG BUY':score>=2?'BUY':score<=-4?'STRONG SELL':score<=-2?'SELL':'HOLD / WAIT';
+  const side=score>=2?'BUY':score<=-2?'SELL':'HOLD';
+  const conf=Math.round(Math.min(1,Math.abs(score)/MAX)*100);
+  const plan=side==='BUY'?{entry:price,stop:price-2*A,target:price+3*A}:side==='SELL'?{entry:price,stop:price+2*A,target:price-3*A}:null;
+  return {price,prev:c[L-1],score,MAX,verdict,side,conf,why,plan,atr:A,ind:{s20,s50,r,bb}};
+}
+
+/* ---------- formatting ---------- */
+function fmt(p,ccy){
+  if(p==null||!isFinite(p))return'—';const dp=p<1?6:p<20?4:2;
+  const n=p.toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
+  return !ccy?n:CCY_SIGN[ccy]?CCY_SIGN[ccy]+n:n+' '+ccy;
+}
+const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+
+/* ---------- state ---------- */
+let list=store.get('watch',['BTC','ETH','AAPL','NVDA','EUR/USD','GBP/USD']);
+// make sure Bitcoin and Ethereum are both watched (one-time, so removing one later sticks)
+if(!store.get('ensuredBtcEth',false)){['ETH','BTC'].forEach(s=>{if(!list.includes(s))list.unshift(s)});store.set('watch',list);store.set('ensuredBtcEth',true)}
+// forex: 7 majors + 13 popular crosses, all with live Yahoo rates and an estimated 1-pip Sell/Buy spread
+const FX_PAIRS=['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','EUR/CHF','AUD/JPY','EUR/AUD','GBP/CHF','EUR/CAD','AUD/NZD','CAD/JPY','CHF/JPY','GBP/AUD','NZD/JPY'];
+function addAllForex(){let n=0;FX_PAIRS.forEach(s=>{if(!list.includes(s)){list.push(s);n++}});store.set('watch',list);return n}
+if(!store.get('ensuredForex',false)){addAllForex();store.set('ensuredForex',true)}   // one-time, so removing a pair later sticks
+let selected=list[0];
+const results={};          // sym -> {data, a, err}
+const lastSide=store.get('lastSide',{});
+let timer=null,running=false;
+
+/* ---------- bot feed ---------- */
+function say(text,cls=''){
+  const f=document.getElementById('feed');
+  const m=document.createElement('div');m.className='msg '+cls;
+  m.innerHTML=`<time>${new Date().toLocaleTimeString()}</time>${text}`;
+  f.prepend(m);
+  while(f.children.length>60)f.lastChild.remove();
+}
+function alertUser(title,body){try{if('Notification'in window&&Notification.permission==='granted')new Notification(title,{body})}catch{}}
+
+/* ---------- Sell (bid) / Buy (ask) ---------- */
+const hasBA=r=>r&&r.quote&&r.quote.bid>0&&r.quote.ask>0;
+function bsBoxes(q,C,big){
+  const sp=q.ask-q.bid,mid=(q.ask+q.bid)/2;
+  return `<div class="bs ${big?'big':''}"><div class="s"><small>SELL</small>${fmt(q.bid,big?C:'')}</div>${big?`<div class="spread">spread<br>${fmt(sp,C)}<br>${(sp/mid*100).toFixed(3)}%</div>`:''}<div class="b"><small>BUY</small>${fmt(q.ask,big?C:'')}</div></div>`;
+}
+// trade plan from the price you'd really get: buy at the ask, sell at the bid
+function withQuote(r){
+  const a=r&&r.a;if(!a||!a.plan)return;
+  const q=hasBA(r)?r.quote:null,A=a.atr;
+  const e=q?(a.side==='BUY'?q.ask:q.bid):a.price;
+  a.plan=a.side==='BUY'?{entry:e,stop:e-2*A,target:e+3*A}:{entry:e,stop:e+2*A,target:e-3*A};
+  a.planFromQuote=!!q;
+}
+
+/* ---------- rendering ---------- */
+function renderWatch(){
+  const tb=document.getElementById('watch');
+  tb.innerHTML=list.map(s=>{
+    const r=results[s],a=r&&r.a;
+    const ch=a?(a.price/a.prev-1)*100:null;
+    const live=r&&r.lastTick&&Date.now()-r.lastTick<90000;
+    const fl=r&&r.flash?'flash-'+r.flash:'';if(r)r.flash=null;
+    return `<tr class="sym ${s===selected?'active':''}" data-s="${esc(s)}">
+      <td><span class="dot ${live?'on':''}" title="${live?'Live':'Not streaming'}"></span><b>${esc(s)}</b><div class="small muted">${kind(s)} · ${esc(ccyOf(s))}</div></td>
+      <td class="num ${fl}">${a?(hasBA(r)?bsBoxes(r.quote,ccyOf(s)):fmt(a.price,ccyOf(s))):r&&r.err?'<span class="err">error</span>':'…'}<div class="small ${ch>=0?'up':'down'}">${ch==null?'':(ch>=0?'+':'')+ch.toFixed(2)+'%'}</div></td>
+      <td class="num">${a?`<span class="pill ${a.side}">${a.side}</span>`:''}</td>
+      <td><button class="x" data-del="${esc(s)}" title="Remove">✕</button></td></tr>`;
+  }).join('');
+}
+function renderSelected(){
+  const r=results[selected];
+  const C=selected?ccyOf(selected):'';
+  document.getElementById('selTitle').textContent=selected?`${selected} · prices in ${C}`:'—';
+  document.getElementById('selSource').textContent=r&&r.data?r.data.source:'';
+  const box=document.getElementById('analysis');
+  if(!r){box.innerHTML='<p class="muted">Loading…</p>';drawChart(null);return}
+  if(r.err){box.innerHTML=`<p class="err">${esc(r.err)}</p>`;drawChart(null);return}
+  const a=r.a;withQuote(r);drawChart(r.data,a);
+  const pos=((a.score+a.MAX)/(2*a.MAX))*100;
+  box.innerHTML=`
+    ${hasBA(r)?bsBoxes(r.quote,C,true):`<div class="small muted" style="margin-top:10px">Price ${fmt(a.price,C)} · this source has no separate sell/buy prices</div>`}
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px">
+      <div><div class="small muted">Bot verdict</div><div class="verdict ${a.side==='BUY'?'up':a.side==='SELL'?'down':''}" style="${a.side==='HOLD'?'color:var(--hold)':''}">${a.verdict}</div></div>
+      <div style="min-width:220px;flex:1;max-width:340px"><div class="small muted">Signal strength ${a.score>0?'+':''}${a.score} / ±${a.MAX} · confidence ${a.conf}%</div><div class="meter"><i style="left:${Math.max(0,Math.min(100,pos))}%"></i></div><div class="row small muted" style="justify-content:space-between"><span>Sell</span><span>Hold</span><span>Buy</span></div></div>
+    </div>
+    ${a.plan?`<div class="grid3">
+      <div class="stat"><span class="small muted">${a.planFromQuote?(a.side==='BUY'?'Buy at (ask)':'Sell at (bid)'):'Entry ≈'}</span><b>${fmt(a.plan.entry,C)}</b></div>
+      <div class="stat"><span class="small muted">Stop-loss</span><b class="down">${fmt(a.plan.stop,C)}</b></div>
+      <div class="stat"><span class="small muted">Take-profit</span><b class="up">${fmt(a.plan.target,C)}</b></div></div>
+      <p class="small muted">Stop = 2× ATR, target = 3× ATR (ATR ${fmt(a.atr,C)}), so risk:reward ≈ 1:1.5. ${a.side==='SELL'?'"Sell" means exit a long position or consider a short.':''}</p>`
+      :`<p class="muted">Signals are mixed — the bot suggests waiting for a clearer setup instead of placing an order.</p>`}
+    <div class="small muted">Why:</div>
+    <ul class="reasons">${a.why.map(w=>`<li><span class="${w.pts>0?'up':w.pts<0?'down':'muted'}">${w.pts>0?'▲':w.pts<0?'▼':'•'}</span> ${esc(w.txt)}</li>`).join('')}</ul>
+    ${r.quote&&r.data.feed==='revolut'?`<p class="small muted" style="margin-top:12px">Revolut X quote: bid <b>${fmt(r.quote.bid,C)}</b> · ask <b>${fmt(r.quote.ask,C)}</b> · last trade <b>${fmt(r.quote.last,C)}</b>. The live price is the bid/ask midpoint, which moves with every quote; real trades on this market happen less often.</p>`:''}
+    ${r.quote&&r.data.feed==='yahoo'&&kind(selected)==='forex'?`<p class="small muted" style="margin-top:12px">Live forex rate <b>${fmt(r.quote.last,C)}</b> from Yahoo Finance (1-minute bar from ${new Date(r.quote.at).toLocaleTimeString()}, ${r.quote.session}). <b>Sell/Buy are estimated</b>: the real rate ± half of a typical 1-pip (${FX_PIP(selected)}) broker spread, because no free source publishes live forex buy/sell prices. Forex trades 24 hours, Monday to Friday.</p>`:''}
+    ${r.quote&&r.data.feed==='yahoo'&&kind(selected)!=='forex'?`<p class="small muted" style="margin-top:12px">Last trade <b>${fmt(r.quote.last,C)}</b> from ${r.quote.src||'Yahoo Finance'} at ${new Date(r.quote.at).toLocaleTimeString()} (${r.quote.session})${r.quote.prevClose?` · previous close ${fmt(r.quote.prevClose,C)}`:''}. Sell/Buy are the exchange's best bid/ask; your broker (e.g. Trading 212) may add its own spread, so its prices can differ by a few cents. US stocks trade 14:30–21:00 UK time, with pre-market from 09:00 and after-hours until 01:00; outside those hours the price doesn't move.</p>`:''}
+    ${r.trades&&r.trades.length?`<div class="small muted" style="margin-top:12px">Recent trades — ${r.data.feed==='binance'?'every trade, streamed instantly':'Revolut X, refreshed every ~6s'}</div>
+      <table class="small">${r.trades.slice(0,10).map(t=>`<tr><td class="muted">${new Date(t.t).toLocaleTimeString()}</td><td class="${t.side==='buy'?'up':'down'}">${t.side}</td><td class="num">${fmt(t.p,C)}</td><td class="num muted">${t.q}</td></tr>`).join('')}</table>`:''}`;
+}
+
+function drawChart(d,a){
+  const cv=document.getElementById('chart'),dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,W,H);
+  const css=getComputedStyle(document.documentElement),col=v=>css.getPropertyValue(v).trim();
+  if(!d||!a){ctx.fillStyle=col('--muted');ctx.fillText('No chart data',10,20);return}
+  const N=Math.min(150,d.c.length),S=d.c.length-N,padR=70,padL=6,ph=H*0.72,rTop=ph+18,rh=H-rTop-6;
+  const xs=i=>padL+(i-S)/(N-1)*(W-padL-padR);
+  const vals=[];for(let i=S;i<d.c.length;i++)[d.c[i],a.ind.bb.u[i],a.ind.bb.d[i],a.ind.s50[i]].forEach(v=>v!=null&&vals.push(v));
+  let mn=Math.min(...vals),mx=Math.max(...vals);const pad=(mx-mn)*0.05||mx*0.01;mn-=pad;mx+=pad;
+  const ys=v=>8+(mx-v)/(mx-mn)*(ph-16);
+  ctx.font='11px system-ui';ctx.strokeStyle=col('--line');ctx.fillStyle=col('--muted');ctx.lineWidth=1;
+  for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,y=ys(v);ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.fillText(fmt(v),W-padR+6,y+4)}
+  // bollinger band
+  ctx.fillStyle=col('--band');ctx.beginPath();let first=true;
+  for(let i=S;i<d.c.length;i++){const v=a.ind.bb.u[i];if(v==null)continue;first?ctx.moveTo(xs(i),ys(v)):ctx.lineTo(xs(i),ys(v));first=false}
+  for(let i=d.c.length-1;i>=S;i--){const v=a.ind.bb.d[i];if(v!=null)ctx.lineTo(xs(i),ys(v))}
+  ctx.closePath();ctx.fill();
+  const line=(arr,c,w)=>{ctx.strokeStyle=c;ctx.lineWidth=w;ctx.beginPath();let f=true;for(let i=S;i<arr.length;i++){if(arr[i]==null)continue;f?ctx.moveTo(xs(i),ys(arr[i])):ctx.lineTo(xs(i),ys(arr[i]));f=false}ctx.stroke()};
+  line(a.ind.s50,col('--sma50'),1.2);line(a.ind.s20,col('--sma20'),1.2);line(d.c,col('--accent'),2);
+  // last price tag
+  const ly=ys(a.price);ctx.fillStyle=col('--accent');ctx.fillRect(W-padR+2,ly-9,padR-4,18);ctx.fillStyle='#fff';ctx.fillText(fmt(a.price),W-padR+6,ly+4);
+  // plan lines
+  if(a.plan){[['stop','--sell'],['target','--buy']].forEach(([k,c])=>{const y=ys(a.plan[k]);if(y<0||y>ph)return;ctx.setLineDash([4,4]);ctx.strokeStyle=col(c);ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.setLineDash([])})}
+  // RSI pane
+  const ry=v=>rTop+(100-v)/100*rh;
+  ctx.fillStyle=col('--muted');ctx.fillText('RSI',padL,rTop-4);
+  [30,70].forEach(v=>{ctx.strokeStyle=col('--line');ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(padL,ry(v));ctx.lineTo(W-padR,ry(v));ctx.stroke();ctx.setLineDash([]);ctx.fillText(v,W-padR+6,ry(v)+4)});
+  ctx.strokeStyle=col('--hold');ctx.lineWidth=1.3;ctx.beginPath();let f2=true;
+  for(let i=S;i<d.c.length;i++){const v=a.ind.r[i];if(v==null)continue;f2?ctx.moveTo(xs(i),ry(v)):ctx.lineTo(xs(i),ry(v));f2=false}ctx.stroke();
+}
+
+/* ---------- main loop ---------- */
+async function scanOne(s,iv){
+  const old=results[s]||{};
+  // Twelve Data free plan has tight limits: reuse candle history for 5 min, live prices come from the poller
+  const cached=old.data&&(old.data.feed==='twelve'||old.data.feed==='revolut')&&old.data.iv===iv&&Date.now()-old.fetchedAt<300000;
+  try{
+    const data=cached?old.data:await fetchData(s,iv);
+    const same=old.data&&old.data.feed===data.feed&&old.data.source===data.source;
+    const keep=same?old:{lastTick:old.lastTick};   // new source: drop old quotes/trades/tick history
+    results[s]={...keep,data,a:analyze(data),err:null,fetchedAt:cached?old.fetchedAt:Date.now()};
+  }catch(e){results[s]={...old,data:null,a:null,err:e.message||String(e)}}
+  evaluate(s);
+  renderWatch();if(s===selected)renderSelected();
+}
+/* ---------- real-time: apply a live tick to the last candle ---------- */
+function applyTick(s,k){
+  const r=results[s];if(!r||!r.data)return;
+  const d=r.data,L=d.t.length-1,prevC=d.c[L];
+  if(k.bucket){ // a bare last-price tick: put it into the current candle, or open the next one (keeps the feed's own bar alignment)
+    const ms=IV_MS[d.iv],n=Math.floor(((k.at||Date.now())-d.t[L])/ms);
+    if(n>=1)k={t:d.t[L]+n*ms,o:k.c,h:k.c,l:k.c,c:k.c,closed:true};else k={c:k.c};
+  }
+  if(k.t==null){d.c[L]=k.c;d.h[L]=Math.max(d.h[L],k.c);d.l[L]=Math.min(d.l[L],k.c)}
+  else if(k.t===d.t[L]){d.o[L]=k.o;d.h[L]=k.h;d.l[L]=k.l;d.c[L]=k.c}
+  else if(k.t>d.t[L]){d.t.push(k.t);d.o.push(k.o);d.h.push(k.h);d.l.push(k.l);d.c.push(k.c);['t','o','h','l','c'].forEach(f=>d[f].shift())}
+  else return;
+  try{r.a=analyze(d)}catch{}
+  r.lastTick=Date.now();
+  if(k.c!==prevC){r.flash=k.c>prevC?'up':'down';(r.tickTimes||(r.tickTimes=[])).push(r.lastTick);if(r.tickTimes.length>3000)r.tickTimes.splice(0,1500)}
+  if(k.closed)evaluate(s);   // only announce signal changes on closed candles, to avoid flip-flopping
+  scheduleRender();
+}
+let renderPending=false;
+function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;renderWatch();renderSelected()},400)}
+
+/* crypto: Binance WebSocket kline stream (pushes every ~1-2 s) */
+let ws=null,wsKey='',wsRetry=0;
+function connectWS(){
+  const iv=BIN_IV[document.getElementById('interval').value];
+  const syms=list.filter(s=>results[s]&&results[s].data&&results[s].data.feed==='binance');
+  const pairOf=s=>results[s].data.binPair;
+  const key=syms.map(pairOf).join(',')+'|'+iv;
+  if(key===wsKey&&ws&&ws.readyState<=1)return;
+  wsKey=key;if(ws){ws.onclose=null;ws.close();ws=null}
+  if(!syms.length)return;
+  // kline = candle shape, aggTrade = every individual trade (tick by tick)
+  const streams=[...new Set(syms.map(s=>pairOf(s).toLowerCase()))].flatMap(p=>[p+'@kline_'+iv,p+'@aggTrade',p+'@bookTicker']).join('/');
+  const bySyms=pair=>syms.filter(x=>results[x]&&results[x].data&&results[x].data.binPair===pair);  // e.g. BTC (in £) and BTC/USD share BTCUSDT
+  const hosts=['wss://stream.binance.com:9443','wss://data-stream.binance.vision'];
+  const open=h=>{
+    let opened=false;const sock=new WebSocket(hosts[h]+'/stream?streams='+streams);ws=sock;
+    sock.onopen=()=>{opened=true;wsRetry=0};
+    sock.onmessage=e=>{
+      const m=JSON.parse(e.data).data;if(!m)return;
+      if(!m.e&&m.b&&m.a){   // bookTicker: best bid (sell) / ask (buy)
+        for(const s of bySyms(m.s)){const fx=results[s].data.fx||1;results[s].quote={bid:m.b*fx,ask:m.a*fx};scheduleRender()}
+        return;
+      }
+      if(m.e==='aggTrade'){
+        for(const s of bySyms(m.s)){
+          const fx=results[s].data.fx||1;
+          addTrade(s,{t:m.T,p:m.p*fx,q:+m.q,side:m.m?'sell':'buy'});applyTick(s,{c:m.p*fx,bucket:true});
+        }
+        return;
+      }
+      const k=m.k;if(!k||k.i!==iv)return;
+      for(const s of bySyms(k.s)){
+        const fx=results[s].data.fx||1;
+        applyTick(s,{t:k.t,o:k.o*fx,h:k.h*fx,l:k.l*fx,c:k.c*fx,closed:k.x});
+      }
+    };
+    sock.onclose=()=>{if(ws!==sock)return;if(!opened&&h===0)return open(1);wsKey='';setTimeout(connectWS,Math.min(30000,1000*2**wsRetry++))};
+  };
+  open(0);
+}
+
+/* stocks & forex: poll Twelve Data /price, spaced to stay inside the free 8 credits/min */
+let pollTimer=null,pollPeriod=0;
+function schedulePoll(){
+  clearTimeout(pollTimer);
+  const key=store.get('tdkey','');
+  const syms=list.filter(s=>results[s]&&results[s].data&&results[s].data.feed==='twelve');
+  pollPeriod=0;if(!key||!syms.length)return;
+  pollPeriod=Math.max(10,Math.ceil(syms.length*60/6));
+  pollTimer=setTimeout(async()=>{
+    try{
+      const j=await getJSON(`https://api.twelvedata.com/price?symbol=${encodeURIComponent(syms.map(tdSymbol).join(','))}&apikey=${encodeURIComponent(key)}`);
+      syms.forEach(s=>{const v=syms.length===1?j:j[tdSymbol(s)];if(v&&v.price)applyTick(s,{c:+v.price})});
+    }catch{}
+    schedulePoll();
+  },pollPeriod*1000);
+}
+function addTrade(s,t){const r=results[s];if(!r)return;(r.trades||(r.trades=[])).unshift(t);if(r.trades.length>15)r.trades.length=15}
+/* crypto via Revolut X: bid/ask quotes for all symbols every ~1.5 s, plus the real trade list of the selected symbol */
+let rxTimer=null,rxCycle=0;
+function scheduleRevolut(){
+  clearTimeout(rxTimer);
+  const syms=list.filter(s=>results[s]&&results[s].data&&results[s].data.feed==='revolut'&&!results[s].rxBad);
+  if(!syms.length)return;
+  const ticker=group=>rxGet(`/1.0/public/tickers?symbols=${group.map(rxSym).join(',')}&region=${rxRegion()}`).then(j=>{
+    for(const x of j.data||[]){
+      const s=group.find(q=>rxSym(q)===String(x.symbol).replace('/','-'));
+      if(!s||(x.region&&x.region!==rxRegion()))continue;
+      const px=+(x.mid||x.last_price);if(!px)continue;
+      results[s].quote={bid:+x.bid,ask:+x.ask,last:+x.last_price};
+      applyTick(s,{c:px,bucket:true});   // mid price moves with every quote change; trades are rarer
+    }
+  });
+  const unlisted=e=>e.status>=400&&e.status<500&&e.status!==429;
+  rxTimer=setTimeout(async()=>{
+    try{await ticker(syms)}
+    catch(e){
+      // Revolut rejects the whole request if one pair is unknown: retry one by one and drop the bad pair
+      if(unlisted(e))for(const s of syms){
+        try{await ticker([s])}
+        catch(e2){if(unlisted(e2)){results[s].rxBad=true;say(`<b>${esc(s)}</b>: Revolut X (${rxRegion()}) has no live ticker for ${esc(rxSym(s))}, so its price won't update live. Try another currency or region.`)}}
+      }
+    }
+    if(++rxCycle%4===0&&syms.includes(selected)){   // real trades for the symbol on screen, every ~6 s
+      const s=selected,now=Date.now();
+      try{
+        const j=await rxGet(`/1.0/public/trades/all?symbol=${rxSym(s)}&start_date=${now-6*3600000}&end_date=${now}&limit=15&region=${rxRegion()}`);
+        if(results[s])results[s].trades=(j.data||[]).map(x=>({t:x.timestamp,p:+x.price,q:+x.quantity,side:x.side}));
+        scheduleRender();
+      }catch{}
+    }
+    scheduleRevolut();
+  },1500);
+}
+/* stocks via Yahoo: latest 1-minute price for each stock every ~2 s */
+let yfTimer=null;
+function scheduleYahoo(){
+  clearTimeout(yfTimer);
+  const syms=list.filter(s=>results[s]&&results[s].data&&results[s].data.feed==='yahoo');
+  if(!syms.length)return;
+  yfTimer=setTimeout(async()=>{
+    for(const s of syms){
+      // Yahoo's forex rate only moves once a minute, so with many pairs poll each one every ~15 s instead of every 2 s
+      if(kind(s)==='forex'){const r=results[s];if(r&&r.fxPolled&&Date.now()-r.fxPolled<15000)continue;if(r)r.fxPolled=Date.now()}
+      if(kind(s)!=='forex')try{   // Nasdaq: real-time bid / ask / last trade (stocks only)
+        const j=await (await fetch(`/nq/api/quote/${encodeURIComponent(s)}/info?assetclass=stocks`)).json();
+        const p=j.data&&j.data.primaryData,num=v=>+String(v||'').replace(/[$,]/g,'');
+        const bid=num(p&&p.bidPrice),ask=num(p&&p.askPrice),last=num(p&&p.lastSalePrice);
+        if(last>0&&results[s]&&results[s].data){
+          const st=String(j.data.marketStatus||'').toLowerCase();
+          const session=st.includes('pre')?'pre-market':st.includes('after')?'after-hours':st==='open'?'market open':st?st:'—';
+          results[s].quote={bid:bid>0?bid:null,ask:ask>0?ask:null,last,at:Date.now(),session,src:'Nasdaq'};
+          if(results[s].data.iv==='1day')applyTick(s,{c:last});else applyTick(s,{c:last,bucket:true});
+          continue;
+        }
+      }catch{}
+      try{   // fallback: Yahoo 1-minute price (no bid/ask)
+        const res=await yfGet(yfURL(s,'1m','1d',true)),c=res.indicators.quote[0].close;
+        let k=c.length-1;while(k>=0&&c[k]==null)k--;
+        if(k<0||!results[s]||!results[s].data)continue;
+        const at=res.timestamp[k]*1000,p=res.meta.currentTradingPeriod||{};
+        const inP=x=>x&&at>=x.start*1000&&at<x.end*1000+60000;
+        const session=inP(p.regular)?'market open':inP(p.pre)?'pre-market':inP(p.post)?'after-hours':'market closed';
+        if(kind(s)==='forex'){
+          // forex: real live rate; no free source publishes forex buy/sell prices, so add a typical 1-pip broker spread
+          const pip=FX_PIP(s),open=Date.now()-at<10*60000;
+          results[s].quote={bid:c[k]-pip/2,ask:c[k]+pip/2,last:c[k],at,session:open?'forex open':'forex market closed',est:true,src:'Yahoo Finance'};
+        }else results[s].quote={last:c[k],at,session,prevClose:res.meta.chartPreviousClose,src:'Yahoo Finance'};
+        if(results[s].data.iv==='1day')applyTick(s,{c:c[k]});else applyTick(s,{c:c[k],bucket:true,at});
+      }catch{}
+    }
+    scheduleYahoo();
+  },2000);
+}
+function goLive(){connectWS();schedulePoll();scheduleRevolut();scheduleYahoo()}
+
+/* live status line for the selected symbol */
+setInterval(()=>{
+  const r=results[selected],el=document.getElementById('selLive');
+  if(!r||!r.data){el.innerHTML='';return}
+  if(r.data.feed==='ecb'){el.innerHTML='<span class="dot"></span>Daily data — not real-time';return}
+  if(!r.lastTick){el.innerHTML=`<span class="dot"></span>Connecting to live feed…`;return}
+  const ago=Math.round((Date.now()-r.lastTick)/1000);
+  const how=r.data.feed==='binance'?'Binance · every trade streamed':r.data.feed==='revolut'?'Revolut X quotes every ~1.5s':r.data.feed==='yahoo'?`${r.quote&&r.quote.src||'Yahoo Finance'} quotes every ~2s · ${r.quote?r.quote.session:''}`:`polled every ${pollPeriod}s`;
+  const tpm=(r.tickTimes||[]).filter(x=>x>Date.now()-60000).length;
+  el.innerHTML=`<span class="dot ${ago<90?'on':''}"></span><b style="color:var(--buy)">LIVE</b> · ${how} · ${tpm} price moves in the last minute · last update ${ago}s ago · ${new Date(r.lastTick).toLocaleTimeString()}`;
+},1000);
+
+function evaluate(s){
+  withQuote(results[s]);
+  const a=results[s]&&results[s].a;
+  if(a){
+    const prev=lastSide[s];
+    if(prev!==a.side&&(prev!==undefined||a.side!=='HOLD')){
+      const txt=a.side==='HOLD'
+        ?`<b>${esc(s)}</b>: signal faded to <b>HOLD</b> at ${fmt(a.price,ccyOf(s))}. No clear edge right now.`
+        :`<b>${esc(s)}</b>: <b>${a.verdict}</b> ${a.planFromQuote?(a.side==='BUY'?'— buy price':'— sell price'):'at'} ${fmt(a.plan.entry,ccyOf(s))} (confidence ${a.conf}%). Stop ${fmt(a.plan.stop,ccyOf(s))}, target ${fmt(a.plan.target,ccyOf(s))}.<div class="small muted">${esc(a.why.filter(w=>Math.sign(w.pts)===Math.sign(a.score)).slice(0,2).map(w=>w.txt).join(' '))}</div>`;
+      say(txt,a.side);
+      if(a.side!=='HOLD')alertUser(`${s}: ${a.verdict}`,`Price ${fmt(a.price,ccyOf(s))} · stop ${fmt(a.plan.stop,ccyOf(s))} · target ${fmt(a.plan.target,ccyOf(s))}`);
+    }
+    lastSide[s]=a.side;store.set('lastSide',lastSide);
+  }
+}
+async function scanAll(){
+  if(running)return;running=true;
+  const iv=document.getElementById('interval').value;
+  document.getElementById('status').textContent='Scanning…';
+  await Promise.all(list.map(s=>scanOne(s,iv)));
+  const ok=list.filter(s=>results[s]&&results[s].a);
+  const buys=ok.filter(s=>results[s].a.side==='BUY'),sells=ok.filter(s=>results[s].a.side==='SELL');
+  document.getElementById('status').textContent=`Full rescan ${new Date().toLocaleTimeString()} · ${buys.length} buy · ${sells.length} sell · ${ok.length-buys.length-sells.length} hold · prices update live between scans`;
+  running=false;goLive();
+}
+function schedule(){clearInterval(timer);const sec=+document.getElementById('refresh').value;store.set('refresh',sec);if(sec)timer=setInterval(scanAll,sec*1000)}
+
+const $id=id=>document.getElementById(id);
+// the Trading 212 auto-trader was removed: forget any API keys / settings it saved in this browser
+try{Object.keys(localStorage).filter(k=>/^t2/.test(k)).forEach(k=>localStorage.removeItem(k))}catch{}
+
+// the simulator was removed: forget its saved virtual balance
+try{localStorage.removeItem('sim')}catch{}
+
+/* ---------- events ---------- */
+document.getElementById('watch').addEventListener('click',e=>{
+  const del=e.target.closest('[data-del]');
+  if(del){const s=del.dataset.del;list=list.filter(x=>x!==s);store.set('watch',list);delete results[s];if(selected===s)selected=list[0];renderWatch();renderSelected();goLive();return}
+  const tr=e.target.closest('tr.sym');if(tr){selected=tr.dataset.s;renderWatch();renderSelected()}
+});
+document.getElementById('addForm').addEventListener('submit',e=>{
+  e.preventDefault();const inp=document.getElementById('addInput');const s=normalize(inp.value);inp.value='';
+  if(!s)return;if(!list.includes(s)){list.push(s);store.set('watch',list)}
+  selected=s;renderWatch();renderSelected();scanOne(s,document.getElementById('interval').value).then(goLive);
+});
+const keyEl=document.getElementById('apiKey');keyEl.value=store.get('tdkey','');
+keyEl.addEventListener('change',()=>{store.set('tdkey',keyEl.value.trim());scanAll()});
+const ivEl=document.getElementById('interval');ivEl.value=store.get('interval','1h');
+ivEl.addEventListener('change',()=>{store.set('interval',ivEl.value);for(const k in lastSide)delete lastSide[k];scanAll()});
+const rfEl=document.getElementById('refresh');rfEl.value=String(store.get('refresh',60));rfEl.addEventListener('change',schedule);
+document.getElementById('refreshBtn').onclick=scanAll;
+document.getElementById('addFx').onclick=()=>{const n=addAllForex();say(n?`Added ${n} forex pair${n>1?'s':''} to the watchlist.`:'All 20 forex pairs are already in the watchlist.');renderWatch();if(n)scanAll()};
+[['cryptoSrc',cryptoSrc()],['rxRegion',rxRegion()],['quoteCcy',quoteCcy()]].forEach(([id,v])=>{
+  const el=document.getElementById(id);el.value=v;
+  el.addEventListener('change',()=>{store.set(id,el.value);list.forEach(s=>{if(results[s]){results[s].fetchedAt=0;results[s].rxBad=false}});scanAll()});
+});
+if(cryptoSrc()==='revolut'&&!PROXY)say('To use <b>Revolut X</b> crypto data, close this page and double-click <b>Start Signal Bot.cmd</b> (Revolut blocks direct browser access). Using Binance for now.');
+document.getElementById('notifyBtn').onclick=async()=>{if(!('Notification'in window))return say('This browser does not support notifications.');const p=await Notification.requestPermission();say(p==='granted'?'Desktop alerts are on. I will ping you when a signal changes.':'Alerts were not allowed.')};
+window.addEventListener('resize',()=>renderSelected());
+
+say(`Hi! I watch your markets and tell you when indicators line up for a <b>buy</b> or <b>sell</b>. Add symbols like <b>AAPL</b>, <b>BTC</b> or <b>EUR/USD</b> at the top. Crypto and stocks work out of the box when started with Start Signal Bot.cmd.`);
+renderWatch();renderSelected();scanAll();schedule();
+</script>
+</body>
+</html>
